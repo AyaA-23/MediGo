@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: medigo_db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - teleconsultation_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: medigo_redis
+    restart: unless-stopped
+    networks:
+      - teleconsultation_net
+
+  django:
+    build: ./backend
+    container_name: medigo_django
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./backend:/app
+      - ./media:/app/media
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - teleconsultation_net
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             uvicorn config.asgi:application --host 0.0.0.0 --port 8000"
+
+  nginx:
+    image: nginx:alpine
+    container_name: medigo_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./media:/media
+      - ./backend/static_collected:/static
+    depends_on:
+      - django
+    networks:
+      - teleconsultation_net
+
+volumes:
+  postgres_data:
+
+networks:
+  teleconsultation_net:
+    driver: bridge

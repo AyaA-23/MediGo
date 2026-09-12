@@ -1,0 +1,5 @@
+medigo_full/medigo/.env
+__pycache__/
+*.pyc
+venv/
+db.sqlite3
