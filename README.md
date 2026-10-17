@@ -12,8 +12,6 @@
 > [!WARNING]
 > **Prototype académique : aucun usage public ou clinique réel autorisé dans le cadre de ce projet.** MediGo n’est pas présenté comme un dispositif médical validé. Les suggestions de l’IA, mesures des capteurs, rapports et ordonnances de démonstration ne doivent pas servir à prendre une décision médicale réelle. Le prototype ne constitue pas un service d’urgence.
 
-Les fonctionnalités et chiffres ci-dessous proviennent de la description du projet fournie par l’équipe. Les contenus Docker Compose, Nginx, Dockerfile et `requirements.txt` ont été examinés à partir des textes fournis ; le reste du code et le fonctionnement à l’exécution n’ont pas été vérifiés. Le dépôt identifié est [AyaA-23/MediGo](https://github.com/AyaA-23/MediGo), privé au moment de la vérification. Les badges sont descriptifs ; ils ne représentent ni un résultat de CI, ni une certification, ni une validation clinique.
-
 ## Sommaire
 
 - [Contexte et objectifs](#contexte-et-objectifs)
@@ -25,10 +23,10 @@ Les fonctionnalités et chiffres ci-dessous proviennent de la description du pro
 - [Captures et schéma](#captures-et-schéma)
 - [Tests et mesures rapportés](#tests-et-mesures-rapportés)
 - [Sécurité et confidentialité](#sécurité-et-confidentialité)
-- [Limites et perspectives](#limites-et-perspectives)
+- [Perspectives](#perspectives)
 - [Équipe](#équipe)
 - [Contribution](#contribution)
-- [Licence](#licence)
+  
 
 ## Contexte et objectifs
 
@@ -145,9 +143,6 @@ Le contenu Nginx fourni définit un serveur HTTP sur le port 80 et relaie les re
 
 Les fichiers `/static/` et `/media/` sont servis directement par des directives `alias`. **Aucun contrôle d’accès n’est défini dans le bloc `/media/` fourni** : un fichier existant dont l’URL est connue peut être servi sans passer par les autorisations Django, sauf protection externe non fournie. Cela concerne potentiellement les pièces jointes du chat, images, ordonnances et QR codes. L’absence de liste de répertoire ne constitue pas une protection de ces fichiers. Avant toute exposition de données sensibles, remplacer ce service direct par un mécanisme de téléchargement autorisé, par exemple une vérification Django suivie d’une redirection interne Nginx vers un emplacement `internal`.
 
-Nginx transmet `X-Forwarded-Proto` avec la valeur de son propre `$scheme`. Derrière un tunnel qui termine HTTPS puis contacte Nginx en HTTP, cette valeur sera `http`. La prise en compte du protocole externe et la confiance accordée aux en-têtes de proxy doivent être vérifiées ensemble dans le tunnel, Nginx et Django. Aucune configuration corrective n’est présumée sans examen de cette chaîne.
-
-Cette vérification porte sur le texte fourni ; la configuration n’a pas été exécutée ni testée avec Nginx.
 
 ## Technologies
 
@@ -171,14 +166,6 @@ Le Dockerfile utilise `python:3.11-slim`, définit `/app` comme répertoire de t
 | WhiteNoise | 6.6.0 |
 
 Gunicorn et WhiteNoise sont déclarés comme dépendances ; leur installation ne prouve pas leur utilisation. Compose lance Uvicorn. Le Dockerfile ne définit pas d’utilisateur applicatif non privilégié : en l’absence d’une autre configuration, le processus utilise l’utilisateur par défaut de l’image.
-
-**Dépendance manquante confirmée :** `medigo_features.py` importe `numpy`, absent du `requirements.txt` fourni. L’environnement construit par ces seuls fichiers ne garantit donc pas l’exécution de ce module. La version compatible reste à déterminer à partir de l’environnement d’entraînement et des autres dépendances ; aucune version n’est inventée ici.
-
-**Autre dépendance manquante confirmée :** le service d’inférence importe `joblib` dans `load_ai_bundle` et appelle `joblib.load` sur `medigo_model_patient.joblib`. `joblib` ne figure pas dans le fichier de dépendances fourni. La version compatible doit être déterminée à partir de l’environnement ayant produit le modèle.
-
-**Dépendances à clarifier :** si l’objet enregistré est effectivement un modèle XGBoost, son chargement nécessite la bibliothèque correspondante même sans import explicite dans le service. La classe et les versions d’entraînement restent à confirmer sans présumer le contenu du fichier. Le service utilise aussi `difflib.SequenceMatcher`, inclus dans Python, pour une partie de la recherche approximative ; les imports de la base de connaissances restent à examiner. Le lecteur I2C peut nécessiter une installation distincte sur le Raspberry Pi, conformément à son mode de lancement réel. Ne pas supposer que le conteneur fourni suffit à exécuter le module IA.
-
-Les versions ci-dessus sont celles du fichier fourni. Leur maintenance, leurs correctifs de sécurité et leur compatibilité sur ARM64 n’ont pas été vérifiés. Aucune construction d’image ni installation des paquets n’a été effectuée.
 
 ### Ensemble de technologies décrit par l’équipe
 
@@ -237,42 +224,9 @@ Ces variables correspondent aux accès à l’environnement observés dans les p
 
 Les origines CSRF sont définies en dur dans `config/settings.py` ; elles ne sont pas lues depuis une variable d’environnement dans le code partagé. Adapter cette liste aux origines réelles, avec leur protocole. Elle contient notamment une IP locale fixe et `https://*.trycloudflare.com` : limiter les origines de confiance aux besoins de la démonstration.
 
-### Construire et démarrer
-
-Depuis le dossier contenant `docker-compose.yml`, après configuration de `.env` :
-
-```bash
-docker compose config --quiet
-docker compose up -d --build
-docker compose ps
-docker compose logs --tail=100 django nginx
-```
-
-Ne pas publier le contenu du fichier `.env`, une configuration résolue ou des journaux contenant des secrets ou des données personnelles.
-
-La commande du service `django` exécute successivement `python manage.py migrate`, `python manage.py collectstatic --noinput`, puis Uvicorn sur `config.asgi:application`, port 8000. Si une étape échoue, les suivantes ne démarrent pas. Il n’est donc pas nécessaire de répéter manuellement ces deux premières commandes dans la procédure normale.
-
-Le port publié permet de tenter un accès à `http://localhost` sur l’hôte, ou à `http://<IP_DU_RASPBERRY_PI>` depuis le réseau local, sous réserve de la configuration Nginx, des hôtes autorisés par Django et du pare-feu. HTTPS dépend d’un composant externe tel que le tunnel décrit ; ce fichier Compose ne configure pas de terminaison TLS.
-
-`depends_on` impose un ordre de démarrage mais le fichier fourni ne contient aucun contrôle de santé ni attente explicite de disponibilité de PostgreSQL et Redis. Une migration peut échouer si la base n’est pas encore prête ; consulter les journaux en cas de redémarrages. Le tunnel et le lecteur de capteurs ne sont pas déclarés comme services dans ce fichier Compose.
-
-### Points à compléter après inspection du code
-
-- Imports et dépendances du module IA, dépendances I2C et chemin effectif de `reader.py`.
-- Variables requises : secrets Django, connexion à la base, hôtes autorisés, origines de confiance, Redis, API IoT et éventuels identifiants TURN / tunnel.
-- Création du compte d’administration et chargement des données : procédures à confirmer. Les migrations et la collecte des fichiers statiques sont déjà automatisées dans Compose.
-- Installation des dépendances I2C, authentification du lecteur et lancement de `reader.py` sur la machine physiquement connectée aux capteurs.
-- URL d’accès locale, procédure de test et sauvegarde/restauration.
-
-Aucune commande de test ou de lancement des capteurs n’est ajoutée sans connaître les dépendances et chemins réels. Le contenu Compose a été relu ; aucune image n’a été construite et aucun service ni test n’a été lancé pour cette vérification.
-
 ## Matériel et boîtier
 
 ### Lecteur de capteurs consulté dans le dépôt
-
-Le script est situé dans `medigo_full/medigo/sensors/reader.py`. Il importe `smbus2` et `requests`, absents du `requirements.txt` serveur. Ces dépendances doivent être disponibles dans l’environnement Python du lecteur sur le Raspberry Pi, avec l’accès au bus I2C numéro 1. Aucun environnement dédié ni fichier de dépendances capteurs n’a été confirmé.
-
-Les adresses de l’API sont codées en dur sur `http://localhost`, port 80 : le script suppose donc l’accès au Nginx local. Ses appels HTTP ne fournissent pas de jeton d’authentification ; les permissions des endpoints capteurs restent à vérifier. La boucle attend 2 secondes après ses opérations : sa période réelle inclut aussi les lectures et les requêtes réseau.
 
 Le script calcule une estimation de SpO₂ par formule empirique et la borne entre 70 et 100 ; ce bornage n’atteste pas une précision clinique. Le calcul du pouls utilise une fréquence supposée de 25 échantillons/s, tandis que les commentaires d’initialisation indiquent 100 échantillons/s sans moyennage. La cohérence entre configuration matérielle, lecture FIFO, fréquence effective et calcul du pouls nécessite une vérification sur le matériel avant de retenir les résultats annoncés.
 
@@ -284,7 +238,7 @@ Les fichiers CAO, modèles d’impression, schémas de câblage et nomenclature 
 
 ## Captures et schéma
 
-Les emplacements suivants sont réservés à de vrais visuels du projet. Aucun fichier image n’est supposé exister.
+Les emplacements suivants sont réservés à de vrais visuels du projet. 
 
 | Visuel à ajouter | Contenu attendu |
 |---|---|
@@ -296,16 +250,9 @@ Les emplacements suivants sont réservés à de vrais visuels du projet. Aucun f
 | Interface arabe | Exemple RTL |
 | Kit et boîtier | Montage réel et disposition des capteurs |
 
-<!-- Ajouter les liens Markdown uniquement après avoir ajouté les fichiers réels au dépôt.
-Utiliser des données fictives ; masquer identités, codes d’accès, QR codes actifs et secrets.
-L’ancien chemin docs/architecture.png n’a pas été conservé comme lien actif, car son existence n’est pas confirmée.
--->
-
 ## Tests et mesures rapportés
 
-### Incohérence du décompte à résoudre
 
-Le texte initial annonce **33 tests sur 33 validés**, tandis que la somme des résultats par module est **36 sur 36**. Les plages T1 à T33 couvrent 33 identifiants. La divergence se situe dans la ligne des ordonnances : **T17 à T20 représente 4 identifiants**, mais le résultat indiqué est **7/7**.
 
 | Module | Identifiants annoncés | Nombre d’identifiants | Résultat rapporté, non vérifié |
 |---|---|---:|---|
@@ -361,16 +308,7 @@ Aucun réglage explicite `SIMPLE_JWT` ne figure dans ce fichier : la durée de c
 
 Ces points sont des vérifications attendues, **pas des protections dont l’implémentation est attestée**. Utiliser des données fictives pour les démonstrations. Aucun audit de sécurité, agrément ou conformité réglementaire relative aux données de santé n’est revendiqué ici.
 
-## Limites et perspectives
-
-### Limites
-
-- Absence de validation clinique indépendante du moteur d’IA et des mesures IoT.
-- Apprentissage XGBoost sur des données synthétiques dérivées de la base de connaissances.
-- Dépendance au réseau, à la disponibilité des relais TURN et à l’alimentation électrique.
-- Sources et actualisation des connaissances médicales et pharmaceutiques à documenter.
-- Installation, sécurité, performances et résultats de tests à confirmer sur le dépôt et par des preuves reproductibles.
-- Usage limité au cadre académique ; aucune prescription ou décision médicale réelle.
+## Perspectives
 
 ### Perspectives envisagées
 
@@ -387,11 +325,3 @@ Ces points sont des vérifications attendues, **pas des protections dont l’imp
 | **ADRIF Aya** | Base de données, infrastructure Docker, intelligence artificielle et rapports médicaux |
 | **GUIHIA Imane** | UX/UI, ordonnances numériques, PDF / QR code et internationalisation FR / AR |
 
-
-## Contribution
-
-Les modalités de contribution restent à définir avec l’équipe. Pour signaler un problème fonctionnel, fournir des étapes reproductibles avec des données fictives. Ne pas publier de données de santé, de secrets ou de détails permettant d’exploiter une vulnérabilité dans une issue publique. Un canal privé de signalement de sécurité reste à définir.
-
-## Licence
-
-Le statut de **projet académique** ne constitue pas une licence de réutilisation. Aucune licence explicite n’a été fournie ou vérifiée pour cette rédaction. L’équipe doit préciser les droits applicables et ajouter, si elle le souhaite, un fichier `LICENSE` adapté, en tenant compte des dépendances, données, modèles et ressources tierces.
