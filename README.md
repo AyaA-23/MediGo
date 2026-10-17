@@ -25,7 +25,6 @@
 - [Sécurité et confidentialité](#sécurité-et-confidentialité)
 - [Perspectives](#perspectives)
 - [Équipe](#équipe)
-- [Contribution](#contribution)
   
 
 ## Contexte et objectifs
